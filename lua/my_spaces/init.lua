@@ -38,4 +38,16 @@ M.remove_space = function()
     print("remove space")
 end
 
+M.setup = function()
+    vim.api.nvim_create_user_command("AddSpace", function()
+        package.loaded.my_spaces = nil
+        M.add_space()
+    end, {})
+
+    vim.api.nvim_create_user_command("ListSpace", function()
+        package.loaded.my_spaces = nil
+        M.list_space()
+    end, {})
+end
+
 return M
