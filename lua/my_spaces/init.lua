@@ -1,52 +1,160 @@
 local Path = require("plenary.path")
+local config = require("my_spaces.config")
 local log = require("my_spaces.dev").log
 
 local data_path = vim.fn.stdpath("data")
 local cache_config = string.format("%s/my-spaces.json", data_path)
 
+local nvim_tree_ok, nvimtree = pcall(require, "nvim-tree.api")
+
 local M = {};
 
-M.print = function(value)
+P = function(value)
     print(vim.inspect(value))
 end
 
+local read_file = function(local_config)
+    log.trace("_read_config(): ", local_config)
+    return vim.json.decode(Path:new(local_config):read())
+end
+
+local write_files = function(json)
+    log.trace("add_space() Saving cache config to", cache_config)
+    Path:new(cache_config):write(vim.json.encode(json), "w")
+end
+
+local check_path_exists = function(tab, path)
+    for _, value in ipairs(tab) do
+        if value.path == path then
+            return true
+        end
+
+        return false
+    end
+end
+
 -- TODO add working directory to lists
-M.add_space = function(path)
+M.add_space = function(opts)
+    local path = vim.trim(opts.path or config.path)
+
+    path, _ = string.gsub(path, "/*$", "")
+
     if path == nil then
         path = vim.fn.expand("%:p:h")
     end
-    local json = vim.json.encode({ path })
-    log.trace("add_space() Saving cache config to", cache_config)
-    Path:new(cache_config):write(json, "w")
+    local ok, reads = pcall(read_file, cache_config)
+    local list = {}
+
+    if ok and reads then
+        list = reads
+
+        if check_path_exists(reads, path) then
+            print("Path already exists")
+            return
+        end
+
+        table.insert(list, { index = #reads + 1, path = path })
+    else
+        list = {
+            {
+                index = 1,
+                path = path
+            }
+        }
+    end
+
+    write_files(list)
+    print("Working directory added " .. path)
 end
 
 -- TODO lists working directories
 M.list_space = function()
-    log.trace("_read_config(): ", cache_config)
-    local json = vim.json.decode(Path:new(cache_config):read())
+    local ok, json = pcall(read_file, cache_config)
 
-    vim.ui.select(json or {}, {
+    local list = {}
+
+    if ok then
+        for _, value in ipairs(json or {}) do
+            table.insert(list, value.path)
+        end
+    end
+
+    vim.ui.select(list, {
         prompt = "Select a space",
         telescope = require("telescope.themes").get_dropdown()
     }, function(selected)
-        M.print(selected)
+        if selected then
+            vim.fn.execute("cd " .. selected, "silent")
+
+            if nvim_tree_ok then
+                nvimtree.tree.change_root(selected)
+                nvimtree.tree.reload()
+            end
+
+            print("Project root to " .. selected)
+        end
     end)
 end
 
 -- TODO remove working directories
 M.remove_space = function()
-    print("remove space")
+    local ok, json = pcall(read_file, cache_config)
+
+    local list = {}
+
+    if ok then
+        for _, value in ipairs(json or {}) do
+            table.insert(list, value.path)
+        end
+    end
+
+    vim.ui.select(list, {
+        prompt = "Remove List Select a space",
+        telescope = require("telescope.themes").get_dropdown()
+    }, function(selected)
+        if json then
+            for i, value in ipairs(json) do
+                if value.path == selected then
+                    table.remove(json, i)
+                end
+            end
+            write_files(json)
+            print(selected .. " removed")
+        end
+    end)
+end
+
+M.clean_spaces = function()
+    vim.cmd("!rm -rf " .. cache_config)
 end
 
 M.setup = function()
-    vim.api.nvim_create_user_command("AddSpace", function()
+    vim.api.nvim_create_user_command("AddSpace", function(opts)
         package.loaded.my_spaces = nil
-        M.add_space()
-    end, {})
+
+        if opts.args ~= "" then
+            config.path = vim.fn.getcwd() .. "/" .. opts.args
+        end
+
+        require("my_spaces").add_space(config)
+    end, {
+        nargs = '?',
+        complete = "dir"
+    })
 
     vim.api.nvim_create_user_command("ListSpace", function()
         package.loaded.my_spaces = nil
-        M.list_space()
+        require("my_spaces").list_space()
+    end, {})
+
+    vim.api.nvim_create_user_command("RemoveSpace", function()
+        package.loaded.my_spaces = nil
+        require("my_spaces").remove_space()
+    end, {})
+
+    vim.api.nvim_create_user_command("CleanSpace", function()
+        package.loaded.my_spaces = nil
+        require("my_spaces").clean_spaces()
     end, {})
 end
 
