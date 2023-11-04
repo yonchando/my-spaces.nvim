@@ -5,8 +5,6 @@ local log = require("my_spaces.dev").log
 local data_path = vim.fn.stdpath("data")
 local cache_config = string.format("%s/my-spaces.json", data_path)
 
-local nvim_tree_ok, nvimtree = pcall(require, "nvim-tree.api")
-
 local M = {};
 
 P = function(value)
@@ -86,9 +84,11 @@ M.list_space = function()
         if selected then
             vim.fn.execute("cd " .. selected, "silent")
 
-            if nvim_tree_ok then
-                nvimtree.tree.change_root(selected)
-                nvimtree.tree.reload()
+            local nvimtree_api_ok, nvimtree_api = pcall(require, "nvim-tree.api")
+
+            if nvimtree_api_ok then
+                nvimtree_api.tree.change_root(selected)
+                nvimtree_api.tree.reload()
             end
 
             print("Project root to " .. selected)
@@ -129,9 +129,8 @@ M.clean_spaces = function()
 end
 
 M.setup = function()
+    -- Set user command Add Space
     vim.api.nvim_create_user_command("AddSpace", function(opts)
-        package.loaded.my_spaces = nil
-
         if opts.args ~= "" then
             config.path = vim.fn.getcwd() .. "/" .. opts.args
         end
@@ -142,18 +141,18 @@ M.setup = function()
         complete = "dir"
     })
 
+    -- Set user command List Space
     vim.api.nvim_create_user_command("ListSpace", function()
-        package.loaded.my_spaces = nil
         require("my_spaces").list_space()
     end, {})
 
+    -- Set user command remove space from List Space
     vim.api.nvim_create_user_command("RemoveSpace", function()
-        package.loaded.my_spaces = nil
         require("my_spaces").remove_space()
     end, {})
 
+    -- Set user command delete data file json
     vim.api.nvim_create_user_command("CleanSpace", function()
-        package.loaded.my_spaces = nil
         require("my_spaces").clean_spaces()
     end, {})
 end
