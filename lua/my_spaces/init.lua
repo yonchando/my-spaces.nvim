@@ -112,7 +112,7 @@ M.remove_space = function()
         prompt = "Remove List Select a space",
         telescope = require("telescope.themes").get_dropdown()
     }, function(selected)
-        if json then
+        if json and selected then
             for i, value in ipairs(json) do
                 if value.path == selected then
                     table.remove(json, i)
