@@ -7,6 +7,21 @@ My spaces for easy to change project root.
 Using [packer.nvim](https://github.com/wbthomason/packer.nvim)
 
 ```lua
+    use {
+       'yonchando/my-spaces.nvim',
+       requires = {
+         'nvim-telescope/telescope.nvim',
+         'nvim-lua/plenary.nvim'
+       },
+       config = function()
+         require("my_spaces").setup()
+       end
+    }
+```
+
+Using [lazy.nvim](https://github.com/folke/lazy.nvim)
+
+```lua
   use {
       'yonchando/my-spaces.nvim',
       requires = {
@@ -19,13 +34,32 @@ Using [packer.nvim](https://github.com/wbthomason/packer.nvim)
   }
 ```
 
+## Configs
+
+|Property|Type   |Default|Description              |
+|--------|-------|-----  |-------------------------|
+|width   |number |120    |Width the windows popup  |
+|height  |number |30     |Height the windows popup |
+
 ## Usage
 
-Using with vim cmd
+Open the window lists buffer by `:ListSpace`
+
+You can edit the buffer like normal file.
+
+> Note: Seperate projects by line
+
+|Key |Mode|Description |
+|----|----|------------|
+|q   |n   |Close       |
+|Esc |n   |Close       |
+|C-c |i   |Close       |
+
+### Using with vim cmd
 ```lua
 :AddSpace your-space-path
 ```
-Using [nvim-tree.lua](https://github.com/nvim-tree/nvim-tree.lua)
+### Using [nvim-tree.lua](https://github.com/nvim-tree/nvim-tree.lua)
 ```lua
 local nvimtree = require('nvim-tree')
 
@@ -44,8 +78,14 @@ nvimtree.setup({
 })
 ```
 
-Keymaping
+## Keymaping
 ```lua
+
+local my_spaces = pcall(require, "my_spaces")
+
 vim.keymap.set("n", "<leader>ml", vim.cmd.ListSpace, { desc = "[M]y workpaces [L]ist" }) -- List all workspace
-vim.keymap.set("n", "<leader>mr", vim.cmd.RemoveSpace, { desc = "[M]y workpaces [R]emove List" }) -- List to remove workspace
+vim.keymap.set("n", "<leader>m1", function() my_spaces.go_to(1) end,{desc = "Go to project 1"}) -- Go to project by index start with index 1
+vim.keyma1.set("n", "<leader>m2", function() my_spaces.go_to(2) end,{desc = "Go to project 2"})
+-- so on
+
 ```

@@ -1,15 +1,12 @@
 local Path = require("plenary.path")
 local config = require("my_spaces.config")
 local log = require("my_spaces.dev").log
+local ui = require("my_spaces.ui")
 
 local data_path = vim.fn.stdpath("data")
 local cache_config = string.format("%s/my-spaces.json", data_path)
 
 local M = {};
-
-P = function(value)
-    print(vim.inspect(value))
-end
 
 local read_file = function(local_config)
     log.trace("_read_config(): ", local_config)
@@ -31,7 +28,23 @@ local check_path_exists = function(tab, path)
     end
 end
 
--- TODO add working directory to lists
+local get_menus = function()
+    local ok, json = pcall(read_file, cache_config)
+
+    local list = {}
+
+    if ok then
+        for _, value in ipairs(json or {}) do
+            table.insert(list, value.path)
+        end
+    end
+
+    return {
+        list = list,
+        json = json
+    }
+end
+
 M.add_space = function(opts)
     local path = vim.trim(opts.path or config.path)
 
@@ -40,7 +53,9 @@ M.add_space = function(opts)
     if path == nil then
         path = vim.fn.expand("%:p:h")
     end
+
     local ok, reads = pcall(read_file, cache_config)
+
     local list = {}
 
     if ok and reads then
@@ -65,70 +80,40 @@ M.add_space = function(opts)
     print("Working directory added " .. path)
 end
 
--- TODO lists working directories
-M.list_space = function()
-    local ok, json = pcall(read_file, cache_config)
+M.list_space = function(configs)
+    local menus = get_menus()
+    ui.toggle_menu(menus.list, configs)
+end
 
-    local list = {}
+M.go_to = function(index)
+    local menus = get_menus()
 
-    if ok then
-        for _, value in ipairs(json or {}) do
-            table.insert(list, value.path)
-        end
+
+    if #menus.list < index then
+        print("Index over range")
+        vim.cmd("ListSpace")
+        return
     end
 
-    vim.ui.select(list, {
-        prompt = "Select a space",
-        telescope = require("telescope.themes").get_dropdown()
-    }, function(selected)
-        if selected then
-            vim.fn.execute("cd " .. selected, "silent")
+    local selected = menus.list[index]
 
-            local nvimtree_api_ok, nvimtree_api = pcall(require, "nvim-tree.api")
-
-            if nvimtree_api_ok then
-                nvimtree_api.tree.change_root(selected)
-                nvimtree_api.tree.reload()
-            end
-
-            print("Project root to " .. selected)
-        end
-    end)
-end
-
--- TODO remove working directories
-M.remove_space = function()
-    local ok, json = pcall(read_file, cache_config)
-
-    local list = {}
-
-    if ok then
-        for _, value in ipairs(json or {}) do
-            table.insert(list, value.path)
-        end
+    if not vim.loop.fs_stat(selected) then
+        print("Project path does not exits")
+        return
     end
 
-    vim.ui.select(list, {
-        prompt = "Remove List Select a space",
-        telescope = require("telescope.themes").get_dropdown()
-    }, function(selected)
-        if json and selected then
-            for i, value in ipairs(json) do
-                if value.path == selected then
-                    table.remove(json, i)
-                end
-            end
-            write_files(json)
-            print(selected .. " removed")
-        end
-    end)
+    vim.fn.execute("cd " .. selected, "silent")
+
+    local nvimtree_api_ok, nvimtree_api = pcall(require, "nvim-tree.api")
+
+    if nvimtree_api_ok then
+        nvimtree_api.tree.change_root(selected)
+        nvimtree_api.tree.reload()
+    end
+    print("Project root to " .. selected)
 end
 
-M.clean_spaces = function()
-    vim.cmd("!rm -rf " .. cache_config)
-end
-
-M.setup = function()
+M.setup = function(configs)
     -- Set user command Add Space
     vim.api.nvim_create_user_command("AddSpace", function(opts)
         if opts.args ~= "" then
@@ -143,17 +128,7 @@ M.setup = function()
 
     -- Set user command List Space
     vim.api.nvim_create_user_command("ListSpace", function()
-        require("my_spaces").list_space()
-    end, {})
-
-    -- Set user command remove space from List Space
-    vim.api.nvim_create_user_command("RemoveSpace", function()
-        require("my_spaces").remove_space()
-    end, {})
-
-    -- Set user command delete data file json
-    vim.api.nvim_create_user_command("CleanSpace", function()
-        require("my_spaces").clean_spaces()
+        require("my_spaces").list_space(configs)
     end, {})
 end
 

@@ -1,301 +1,143 @@
+local Path = require("plenary.path")
+local log = require("my_spaces.dev").log
 local popup = require("plenary.popup")
-local Marked = require("harpoon.mark")
-local utils = require("harpoon.utils")
-local log = require("harpoon.dev").log
 local config = require("my_spaces.config")
 
 local M = {}
 
-Myspaces_win_id = nil
-Myspaces_bufh = nil
+local data_path = vim.fn.stdpath("data")
+local cache_config = string.format("%s/my-spaces.json", data_path)
 
--- We save before we close because we use the state of the buffer as the list
--- of items.
-local function close_menu(force_save)
-    force_save = force_save or false
 
-    vim.api.nvim_win_close(Myspaces_win_id, true)
-
-    Myspaces_win_id = nil
-    Myspaces_bufh = nil
+local write_files = function(json)
+    log.trace("add_space() Saving cache config to", cache_config)
+    Path:new(cache_config):write(vim.json.encode(json), "w")
 end
 
-local function create_window()
-    log.trace("_create_window()")
-    local width = config.width or 60
-    local height = config.height or 10
-    local borderchars = config.borderchars
-        or { "─", "│", "─", "│", "╭", "╮", "╯", "╰" }
-    local bufnr = vim.api.nvim_create_buf(false, false)
+local function create_window(configs)
+    local width = configs.width or config.width
+    local height = configs.height or config.height
 
-    local Harpoon_win_id, win = popup.create(bufnr, {
-        title = "My Spaces",
-        highlight = "MyspacesWindow",
+    local bufnr = vim.api.nvim_create_buf(false, false)
+    local win_id, win = popup.create(bufnr, {
+        title = "My Project Spaces",
         line = math.floor(((vim.o.lines - height) / 2) - 1),
         col = math.floor((vim.o.columns - width) / 2),
         minwidth = width,
         minheight = height,
-        borderchars = borderchars,
+        borderchars = { "─", "│", "─", "│", "╭", "╮", "╯", "╰" }
     })
 
     vim.api.nvim_win_set_option(
         win.border.win_id,
         "winhl",
-        "Normal:MyspaceBorder"
+        "Normal:MyProjectSpacesBorder"
     )
 
     return {
         bufnr = bufnr,
-        win_id = Harpoon_win_id,
+        win_id = win_id
     }
 end
 
-local function get_menu_items()
-    log.trace("_get_menu_items()")
-    local lines = vim.api.nvim_buf_get_lines(Myspaces_bufh, 0, -1, true)
-    local indices = {}
-
-    for _, line in pairs(lines) do
-        if not utils.is_white_space(line) then
-            table.insert(indices, line)
-        end
+local function close_window(win_id)
+    if vim.api.nvim_win_is_valid(win_id) then
+        vim.api.nvim_win_close(win_id, true)
+        vim.keymap.del("n", "q")
+        vim.keymap.del("n", "<ESC>")
+        vim.keymap.del("i", "<C-c>")
+        vim.cmd("stopinsert")
     end
-
-    return indices
 end
 
-function M.toggle_quick_menu()
-    log.trace("toggle_quick_menu()")
-    if Myspaces_win_id ~= nil and vim.api.nvim_win_is_valid(Myspaces_win_id) then
-        close_menu()
+local bufnr = nil
+local win_id = nil
+
+M.toggle_menu = function(content, configs)
+    if win_id ~= nil and vim.api.nvim_win_is_valid(win_id) then
+        close_window(win_id)
         return
     end
 
-    local curr_file = utils.normalize_path(vim.api.nvim_buf_get_name(0))
-    vim.cmd(
-        string.format(
-            "autocmd Filetype harpoon "
-            .. "let path = '%s' | call clearmatches() | "
-            -- move the cursor to the line containing the current filename
-            .. "call search('\\V'.path.'\\$') | "
-            -- add a hl group to that line
-            .. "call matchadd('HarpoonCurrentFile', '\\V'.path.'\\$')",
-            curr_file:gsub("\\", "\\\\")
-        )
-    )
+    local win_info = create_window(configs or {})
+    win_id = win_info.win_id
+    bufnr = win_info.bufnr
 
-    local win_info = create_window()
-    local contents = {}
-    local global_config = harpoon.get_global_settings()
+    vim.api.nvim_buf_set_name(bufnr, "my-project-spaces-menu")
 
-    Myspaces_win_id = win_info.win_id
-    Myspaces_bufh = win_info.bufnr
+    vim.api.nvim_win_set_option(win_id, "number", true)
+    vim.api.nvim_win_set_option(win_id, "relativenumber", true)
+    vim.api.nvim_buf_set_option(bufnr, "filetype", "myspace")
+    vim.api.nvim_buf_set_option(bufnr, "buftype", "acwrite")
+    vim.api.nvim_buf_set_option(bufnr, "bufhidden", "delete")
 
-    for idx = 1, Marked.get_length() do
-        local file = Marked.get_marked_file_name(idx)
-        if file == "" then
-            file = "(empty)"
+    local list = {}
+
+    for _, value in pairs(content) do
+        local name = string.gsub(value, vim.fn.getenv("HOME"), "~")
+        table.insert(list, name)
+    end
+
+    vim.api.nvim_buf_set_lines(bufnr, 0, #list, false, list)
+
+    vim.keymap.set("n", "q", function()
+        close_window(win_id)
+    end, { silent = true, desc = "Close My Project Spaces" })
+
+    vim.keymap.set("n", "<ESC>", function()
+        close_window(win_id)
+    end, { silent = true, desc = "Close My Project Spaces" })
+
+    vim.keymap.set("i", "<C-c>", function()
+        close_window(win_id)
+    end, { silent = true, desc = "Close My Project Spaces" })
+
+    vim.keymap.set("n", "<CR>", function()
+        local idx = vim.fn.line(".")
+        close_window(win_id)
+
+        local selected = content[idx]
+
+        if not vim.loop.fs_stat(selected) then
+            print("Project path does not exits")
+            return
         end
-        contents[idx] = string.format("%s", file)
-    end
 
-    vim.api.nvim_win_set_option(Myspaces_win_id, "number", true)
-    vim.api.nvim_buf_set_name(Myspaces_bufh, "my-spaces-menu")
-    vim.api.nvim_buf_set_lines(Myspaces_bufh, 0, #contents, false, contents)
-    vim.api.nvim_buf_set_option(Myspaces_bufh, "filetype", "myspace")
-    vim.api.nvim_buf_set_option(Myspaces_bufh, "buftype", "acwrite")
-    vim.api.nvim_buf_set_option(Myspaces_bufh, "bufhidden", "delete")
-    vim.api.nvim_buf_set_keymap(
-        Myspaces_bufh,
-        "n",
-        "q",
-        "<Cmd>lua require('my_spaces.ui').toggle_quick_menu()<CR>",
-        { silent = true }
-    )
-    vim.api.nvim_buf_set_keymap(
-        Myspaces_bufh,
-        "n",
-        "<ESC>",
-        "<Cmd>lua require('my_spaces.ui').toggle_quick_menu()<CR>",
-        { silent = true }
-    )
-    vim.api.nvim_buf_set_keymap(
-        Myspaces_bufh,
-        "n",
-        "<CR>",
-        "<Cmd>lua require('my_spaces.ui').select_menu_item()<CR>",
-        {}
+        vim.fn.execute("cd " .. selected, "silent")
+
+        local nvimtree_api_ok, nvimtree_api = pcall(require, "nvim-tree.api")
+
+        if nvimtree_api_ok then
+            nvimtree_api.tree.change_root(selected)
+            nvimtree_api.tree.reload()
+        end
+        --
+        print("Root to " .. selected)
+    end)
+
+    vim.cmd(
+        string.format("au BufWriteCmd <buffer=%s> lua require('my_spaces.ui').save_menu()", bufnr)
     )
     vim.cmd(
         string.format(
-            "autocmd BufWriteCmd <buffer=%s> lua require('my_spaces.ui').on_menu_save()",
-            Myspaces_bufh
+            "au TextChanged,TextChangedI <buffer=%s> lua require('my_spaces.ui').save_menu()",
+            bufnr
         )
     )
-    if global_config.save_on_change then
-        vim.cmd(
-            string.format(
-                "autocmd TextChanged,TextChangedI <buffer=%s> lua require('harpoon.ui').on_menu_save()",
-                Myspaces_bufh
-            )
-        )
-    end
-    vim.cmd(
-        string.format(
-            "autocmd BufModifiedSet <buffer=%s> set nomodified",
-            Myspaces_bufh
-        )
-    )
-    vim.cmd(
-        "autocmd BufLeave <buffer> ++nested ++once silent lua require('harpoon.ui').toggle_quick_menu()"
-    )
 end
 
-function M.select_menu_item()
-    local idx = vim.fn.line(".")
-    close_menu(true)
-    M.nav_file(idx)
-end
+M.save_menu = function()
+    local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+    local lists = {}
 
-function M.on_menu_save()
-    log.trace("on_menu_save()")
-    Marked.set_mark_list(get_menu_items())
-end
-
-local function get_or_create_buffer(filename)
-    local buf_exists = vim.fn.bufexists(filename) ~= 0
-    if buf_exists then
-        return vim.fn.bufnr(filename)
-    end
-
-    return vim.fn.bufadd(filename)
-end
-
-function M.nav_file(id)
-    log.trace("nav_file(): Navigating to", id)
-    local idx = Marked.get_index_of(id)
-    if not Marked.valid_index(idx) then
-        log.debug("nav_file(): No mark exists for id", id)
-        return
-    end
-
-    local mark = Marked.get_marked_file(idx)
-    local filename = vim.fs.normalize(mark.filename)
-    local buf_id = get_or_create_buffer(filename)
-    local set_row = not vim.api.nvim_buf_is_loaded(buf_id)
-
-    local old_bufnr = vim.api.nvim_get_current_buf()
-
-    vim.api.nvim_set_current_buf(buf_id)
-    vim.api.nvim_buf_set_option(buf_id, "buflisted", true)
-    if set_row and mark.row and mark.col then
-        vim.cmd(string.format(":call cursor(%d, %d)", mark.row, mark.col))
-        log.debug(
-            string.format(
-                "nav_file(): Setting cursor to row: %d, col: %d",
-                mark.row,
-                mark.col
-            )
-        )
-    end
-
-    local old_bufinfo = vim.fn.getbufinfo(old_bufnr)
-    if type(old_bufinfo) == "table" and #old_bufinfo >= 1 then
-        old_bufinfo = old_bufinfo[1]
-        local no_name = old_bufinfo.name == ""
-        local one_line = old_bufinfo.linecount == 1
-        local unchanged = old_bufinfo.changed == 0
-        if no_name and one_line and unchanged then
-            vim.api.nvim_buf_delete(old_bufnr, {})
+    for index, line in ipairs(lines) do
+        if line ~= "" then
+            local name = string.gsub(line, "~", vim.fn.getenv("HOME"))
+            table.insert(lists, { index = index, path = name })
         end
     end
-end
 
-function M.location_window(options)
-    local default_options = {
-        relative = "editor",
-        style = "minimal",
-        width = 30,
-        height = 15,
-        row = 2,
-        col = 2,
-    }
-    options = vim.tbl_extend("keep", options, default_options)
-
-    local bufnr = options.bufnr or vim.api.nvim_create_buf(false, true)
-    local win_id = vim.api.nvim_open_win(bufnr, true, options)
-
-    return {
-        bufnr = bufnr,
-        win_id = win_id,
-    }
-end
-
-function M.notification(text)
-    local win_stats = vim.api.nvim_list_uis()[1]
-    local win_width = win_stats.width
-
-    local prev_win = vim.api.nvim_get_current_win()
-
-    local info = M.location_window({
-        width = 20,
-        height = 2,
-        row = 1,
-        col = win_width - 21,
-    })
-
-    vim.api.nvim_buf_set_lines(
-        info.bufnr,
-        0,
-        5,
-        false,
-        { "!!! Notification", text }
-    )
-    vim.api.nvim_set_current_win(prev_win)
-
-    return {
-        bufnr = info.bufnr,
-        win_id = info.win_id,
-    }
-end
-
-function M.close_notification(bufnr)
-    vim.api.nvim_buf_delete(bufnr)
-end
-
-function M.nav_next()
-    log.trace("nav_next()")
-    local current_index = Marked.get_current_index()
-    local number_of_items = Marked.get_length()
-
-    if current_index == nil then
-        current_index = 1
-    else
-        current_index = current_index + 1
-    end
-
-    if current_index > number_of_items then
-        current_index = 1
-    end
-    M.nav_file(current_index)
-end
-
-function M.nav_prev()
-    log.trace("nav_prev()")
-    local current_index = Marked.get_current_index()
-    local number_of_items = Marked.get_length()
-
-    if current_index == nil then
-        current_index = number_of_items
-    else
-        current_index = current_index - 1
-    end
-
-    if current_index < 1 then
-        current_index = number_of_items
-    end
-
-    M.nav_file(current_index)
+    write_files(lists)
 end
 
 return M
