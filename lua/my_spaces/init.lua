@@ -8,42 +8,32 @@ local cache_config = string.format("%s/my-spaces.json", data_path)
 
 local M = {};
 
-local read_file = function(local_config)
-    log.trace("_read_config(): ", local_config)
-    return vim.json.decode(Path:new(local_config):read())
-end
+local read_file = ui.read_file
 
-local write_files = function(json)
+local write_files = function(json, path)
     log.trace("add_space() Saving cache config to", cache_config)
-    Path:new(cache_config):write(vim.json.encode(json), "w")
+
+    if not path then
+        path = cache_config
+    end
+
+    Path:new(path):write(vim.json.encode(json), "w")
 end
 
 local check_path_exists = function(tab, path)
+    local isExist = false
+
     for _, value in ipairs(tab) do
         if value.path == path then
-            return true
-        end
-
-        return false
-    end
-end
-
-local get_menus = function()
-    local ok, json = pcall(read_file, cache_config)
-
-    local list = {}
-
-    if ok then
-        for _, value in ipairs(json or {}) do
-            table.insert(list, value.path)
+            isExist = true
+            break
         end
     end
 
-    return {
-        list = list,
-        json = json
-    }
+    return isExist
 end
+
+local get_menus = ui.get_menus
 
 M.add_space = function(opts)
     local path = vim.trim(opts.path or config.path)
@@ -62,7 +52,7 @@ M.add_space = function(opts)
         list = reads
 
         if check_path_exists(reads, path) then
-            print("Path already exists")
+            print("Project already exists")
             return
         end
 
@@ -77,7 +67,7 @@ M.add_space = function(opts)
     end
 
     write_files(list)
-    print("Working directory added " .. path)
+    print("Project added " .. path)
 end
 
 M.list_space = function(configs)

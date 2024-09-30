@@ -8,6 +8,27 @@ local M = {}
 local data_path = vim.fn.stdpath("data")
 local cache_config = string.format("%s/my-spaces.json", data_path)
 
+M.read_file = function(local_config)
+    log.trace("_read_config(): ", local_config)
+    return vim.json.decode(Path:new(local_config):read())
+end
+
+M.get_menus = function()
+    local ok, json = pcall(M.read_file, cache_config)
+
+    local list = {}
+
+    if ok then
+        for _, value in ipairs(json or {}) do
+            table.insert(list, value.path)
+        end
+    end
+
+    return {
+        list = list,
+        json = json
+    }
+end
 
 local write_files = function(json)
     log.trace("add_space() Saving cache config to", cache_config)
@@ -94,9 +115,14 @@ M.toggle_menu = function(content, configs)
 
     vim.keymap.set("n", "<CR>", function()
         local idx = vim.fn.line(".")
-        close_window(win_id)
+
+        content = M.get_menus().list
 
         local selected = content[idx]
+
+        if selected == nil then
+            return
+        end
 
         if not vim.loop.fs_stat(selected) then
             print("Project path does not exits")
@@ -111,8 +137,10 @@ M.toggle_menu = function(content, configs)
             nvimtree_api.tree.change_root(selected)
             nvimtree_api.tree.reload()
         end
-        --
+
         print("Root to " .. selected)
+
+        close_window(win_id)
     end)
 
     vim.cmd(
