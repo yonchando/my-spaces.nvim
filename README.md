@@ -45,7 +45,7 @@ Using [lazy.nvim](https://github.com/folke/lazy.nvim)
 
 Open the window lists buffer by `:ListSpace`
 
-You can edit the buffer like normal file.
+In list buffer you can use the buffer like normal file like `hjkl` to move or insert by `i`. Every project with separate by new line.
 
 > Note: Seperate projects by line
 
