@@ -48,11 +48,26 @@ M.add_space = function(opts)
 
     local list = {}
 
+    local stat = vim.loop.fs_stat(path)
+
+    if stat == nil then
+        print("no such file or directory" .. path)
+        return
+    end
+
+
     if ok and reads then
         list = reads
 
         if check_path_exists(reads, path) then
-            print("Project already exists")
+            if stat.type == "directory" then
+                print("Directory already exists")
+            end
+
+            if stat.type == "file" then
+                print("File already exists")
+            end
+
             return
         end
 
@@ -67,7 +82,14 @@ M.add_space = function(opts)
     end
 
     write_files(list)
-    print("Project added " .. path)
+
+    if stat.type == "directory" then
+        print("Directory added " .. path)
+    end
+
+    if stat.type == "file" then
+        print("File added " .. path)
+    end
 end
 
 M.list_space = function(configs)
@@ -78,7 +100,6 @@ end
 M.go_to = function(index)
     local menus = get_menus()
 
-
     if #menus.list < index then
         print("Index over range")
         vim.cmd("ListSpace")
@@ -87,20 +108,7 @@ M.go_to = function(index)
 
     local selected = menus.list[index]
 
-    if not vim.loop.fs_stat(selected) then
-        print("Project path does not exits")
-        return
-    end
-
-    vim.fn.execute("cd " .. selected, "silent")
-
-    local nvimtree_api_ok, nvimtree_api = pcall(require, "nvim-tree.api")
-
-    if nvimtree_api_ok then
-        nvimtree_api.tree.change_root(selected)
-        nvimtree_api.tree.reload()
-    end
-    print("Project root to " .. selected)
+    ui.open(selected)
 end
 
 M.setup = function(configs)
@@ -113,7 +121,7 @@ M.setup = function(configs)
         require("my_spaces").add_space(config)
     end, {
         nargs = '?',
-        complete = "dir"
+        complete = "file_in_path"
     })
 
     -- Set user command List Space

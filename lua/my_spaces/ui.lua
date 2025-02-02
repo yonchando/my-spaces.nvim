@@ -41,7 +41,7 @@ local function create_window(configs)
 
     local bufnr = vim.api.nvim_create_buf(false, false)
     local win_id, win = popup.create(bufnr, {
-        title = "My Project Spaces",
+        title = "My Spaces",
         line = math.floor(((vim.o.lines - height) / 2) - 1),
         col = math.floor((vim.o.columns - width) / 2),
         minwidth = width,
@@ -124,21 +124,7 @@ M.toggle_menu = function(content, configs)
             return
         end
 
-        if not vim.loop.fs_stat(selected) then
-            print("Project path does not exits")
-            return
-        end
-
-        vim.fn.execute("cd " .. selected, "silent")
-
-        local nvimtree_api_ok, nvimtree_api = pcall(require, "nvim-tree.api")
-
-        if nvimtree_api_ok then
-            nvimtree_api.tree.change_root(selected)
-            nvimtree_api.tree.reload()
-        end
-
-        print("Root to " .. selected)
+        M.open(selected)
 
         close_window(win_id)
     end)
@@ -152,6 +138,35 @@ M.toggle_menu = function(content, configs)
             bufnr
         )
     )
+end
+
+M.open = function(selected)
+    local stat = vim.loop.fs_stat(selected)
+
+    if vim.loop.fs_stat(selected) == nil then
+        print("no such file or directory " .. selected)
+
+        if win_id ~= nil then
+            close_window(win_id)
+        end
+        return
+    end
+
+    if stat.type == "directory" then
+        vim.fn.execute("cd " .. selected, "silent")
+
+        local nvimtree_api_ok, nvimtree_api = pcall(require, "nvim-tree.api")
+
+        if nvimtree_api_ok then
+            nvimtree_api.tree.change_root(selected)
+            nvimtree_api.tree.reload()
+        end
+        print("Project root to " .. selected)
+    end
+    --
+    if stat.type == "file" then
+        vim.cmd("tabnew " .. selected)
+    end
 end
 
 M.save_menu = function()
